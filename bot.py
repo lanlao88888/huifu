@@ -1,15 +1,20 @@
 import requests
 import time
+import os
 
-BOT_TOKEN = "8635376785:AAEtmHoWh2kJAeGD43HCF5vHCZRrwQZ265A"  # 改成你的token
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "你的Bot Token")  # 从环境变量读取，或者直接填
 
 def send_message_with_inline_buttons(chat_id):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     keyboard = {
         "inline_keyboard": [
-            [{"text": "对接发货", "url": "https://t.me/install88"},
-             {"text": "做单流程", "url": "https://t.me/c/2895181398/743"}],
-            [{"text": "微担保公群", "url": "https://t.me/weigq"}]
+            [
+                {"text": "对接发货", "url": "https://t.me/install88"},
+                {"text": "做单流程", "url": "https://t.me/c/2895181398/743"}
+            ],
+            [
+                {"text": "微担保公群", "url": "https://t.me/weigq"}
+            ]
         ]
     }
     payload = {
@@ -21,7 +26,7 @@ def send_message_with_inline_buttons(chat_id):
     requests.post(url, json=payload)
 
 last_id = 0
-print("机器人运行中...")
+print("机器人已启动，等待消息...")
 
 while True:
     try:
@@ -38,5 +43,6 @@ while True:
                 print(f"已回复: {text}")
         
         time.sleep(1)
-    except:
+    except Exception as e:
+        print(f"错误: {e}")
         time.sleep(5)
