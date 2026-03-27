@@ -1,14 +1,17 @@
 import requests
+from flask import Flask, request, jsonify
+import os
 
-# 配置你的Bot Token
-BOT_TOKEN = "8635376785:AAEtmHoWh2kJAeGD43HCF5vHCZRrwQZ265A"  # 替换为你的bot token
+app = Flask(__name__)
+
+# 从环境变量获取Bot Token
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 
 
 def send_message_with_inline_buttons(chat_id):
     """发送带内联按钮的消息"""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
-    # 内联键盘配置
     keyboard = {
         "inline_keyboard": [
             [
@@ -27,3 +30,33 @@ def send_message_with_inline_buttons(chat_id):
         "reply_markup": keyboard,
         "parse_mode": "HTML"
     }
+
+    response = requests.post(url, json=payload)
+    return response.json()
+
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """处理Telegram的webhook回调"""
+    update = request.get_json()
+    
+    if update and 'message' in update:
+        message = update['message']
+        chat_id = message['chat']['id']
+        text = message.get('text', '')
+        
+        # 检查消息前四个字是否为"报备编号"
+        if text.startswith('报备编号'):
+            send_message_with_inline_buttons(chat_id)
+    
+    return jsonify({"status": "ok"})
+
+
+@app.route('/')
+def index():
+    return "Telegram Bot is running!"
+
+
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
