@@ -1,0 +1,6 @@
+
+pip freeze > requirements.txt
+
+# 或者至少包含：
+python-telegram-bot==20.6  # 如果是 Telegram bot
+# 或其他你使用的库
