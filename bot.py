@@ -5,12 +5,14 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 # --- 1. 配置 ---
 TOKEN = os.getenv("BOT_TOKEN", "")
-# 确保名单里全是字符串格式
+ADMIN_ID_VAL = os.getenv("ADMIN_ID", "7934724103").strip()
+
+# --- 2. 核心验证名单 (必须全是带引号的字符串) ---
 VALID_GROUPS = ["88", "116", "117", "118", "100", "006", "168", "333", "A222", "B188"]
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# --- 2. 业务逻辑 ---
+# --- 3. 业务逻辑处理 ---
 WAITING_GROUP_ID = 1
 MAIN_MENU = [['人工客服', '资源对接'], ['自助验群', '纠纷仲裁']]
 main_reply_markup = ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True)
@@ -37,12 +39,13 @@ async def start_verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def check_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = update.message.text.strip().upper()
     
-    # 关键修复：如果在验群状态下输入了“报备编号”，直接跳出并回复
+    # 这里增加了对“报备编号”的优先判断，打断验群状态
     if "报备编号" in user_input:
         await send_baobei_info(update)
+        # 强制结束当前对话状态，重置机器人
         return ConversationHandler.END
 
-    # 检查名单
+    # 统一将列表和用户输入都视作字符串进行比对
     if user_input in VALID_GROUPS:
         res = f"✅ 查询结果：【{user_input}】\n该群为已验证公群，请放心交易。"
     else:
@@ -53,13 +56,20 @@ async def check_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
+    if not text: return
+    
+    # 关键词模糊匹配
     if "报备编号" in text:
         await send_baobei_info(update)
     elif text == "人工客服":
-        await update.message.reply_text("正在转接人工...")
+        await update.message.reply_text("正在转接人工客服，请耐心等待...")
     # 其他菜单处理...
 
 def main():
+    if not TOKEN:
+        print("致命错误: 未检测到 BOT_TOKEN，程序退出")
+        return
+        
     app = Application.builder().token(TOKEN).build()
     
     verify_handler = ConversationHandler(
@@ -68,14 +78,13 @@ def main():
             WAITING_GROUP_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, check_group_id)],
         },
         fallbacks=[CommandHandler("start", start)],
-        # 允许在等待编号时处理其他指令
-        allow_reentry=True 
     )
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(verify_handler)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     
+    print("🚀 机器人已在 Railway 部署完成！纯固定名单模式启动中...")
     app.run_polling()
 
 if __name__ == "__main__":
