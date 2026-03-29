@@ -9,26 +9,28 @@ TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 REDIS_URL = os.getenv("REDIS_URL")
 
-# 连接 Redis (自动处理连接池)
-try:
-    r = redis.from_url(REDIS_URL, decode_responses=True)
-    logging.info("成功连接到 Redis 数据库")
-except Exception as e:
-    logging.error(f"Redis 连接失败: {e}")
+# 【关键点】必须先在这里定义 r，下面的函数才能找到它
+r = None 
+if REDIS_URL:
+    try:
+        r = redis.from_url(REDIS_URL, decode_responses=True)
+        logging.info("成功连接到 Redis 数据库")
+    except Exception as e:
+        logging.error(f"Redis 连接失败: {e}")
+else:
+    logging.error("错误: 未在环境变量中找到 REDIS_URL")
 
-# 启用日志
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-
-# --- 2. 数据库操作函数 (完全取代文件操作) ---
+# --- 2. 数据库操作函数 ---
 
 def save_group_to_db(group_id):
-    """保存群号到 Redis 集合中"""
-    # sadd 返回 1 表示新增成功，0 表示已存在
-    return r.sadd("valid_groups_set", group_id)
+    if r:
+        return r.sadd("valid_groups_set", group_id)
+    return False
 
 def is_group_valid(group_id):
-    """检查群号是否存在于 Redis 中"""
-    return r.sismember("valid_groups_set", group_id)
+    if r:
+        return r.sismember("valid_groups_set", group_id)
+    return False
 
 # --- 3. 菜单与状态定义 ---
 WAITING_GROUP_ID = 1
