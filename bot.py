@@ -87,11 +87,24 @@ async def start_verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return WAITING_GROUP_ID
 
 async def check_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # .strip() 非常重要，它能去掉用户不小心多打的空格或换行符
     user_input = update.message.text.strip()
+    
+    # 调试信息：看看机器人到底收到了什么
+    print(f"DEBUG: 用户正在查询编号: '{user_input}'")
+
+    # 这里的 is_group_valid 会去 Redis 数据库里查找
     if is_group_valid(user_input):
-        res = f"✅ 查询结果：【{user_input}】\n该群为已查证的公群或专群，可放心交易。"
+        res = (
+            f"✅ 查询结果：【{user_input}】\n"
+            f"该群为已查证的公群或专群，可放心交易。"
+        )
     else:
-        res = f"❌ 查询结果：【{user_input}】\n未查证到该编号！注意⚠是假群，请勿交易。"
+        res = (
+            f"❌ 查询结果：【{user_input}】\n"
+            f"未查证到该编号！注意⚠️是假群，请勿交易。"
+        )
+
     await update.message.reply_text(res, reply_markup=main_reply_markup)
     return ConversationHandler.END
 
