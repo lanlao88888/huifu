@@ -21,7 +21,20 @@ def get_db():
     except Exception as e:
         logging.error(f"Redis连接失败: {e}")
         return None
+        
+def get_total_count():
+    r = get_redis()
+    if r:
+        # 获取集合中元素的数量
+        return r.scard("valid_groups_set")
+    return 0
 
+def flush_database():
+    r = get_redis()
+    if r:
+        # 删除存放编号的集合
+        return r.delete("valid_groups_set")
+    return False
 # --- 3. 修正后的业务函数 ---
 def save_group_to_db(group_id):
     db = get_db()
@@ -42,7 +55,25 @@ def is_group_valid(group_id):
 WAITING_GROUP_ID = 1
 MAIN_MENU = [['人工客服', '资源对接'], ['自助验群', '纠纷仲裁']]
 main_reply_markup = ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True)
+async def show_total(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    # 权限检查
+    if str(user.id) != ADMIN_ID_VAL and user.username != "danbao_11":
+        return
 
+    count = get_total_count()
+    await update.message.reply_text(f"📊 当前数据库中共收录编号：{count} 个")
+
+async def clear_database(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if str(user.id) != ADMIN_ID_VAL and user.username != "danbao_11":
+        await update.message.reply_text("❌ 你没有权限清空数据库")
+        return
+
+    if flush_database():
+        await update.message.reply_text("🗑️ 数据库已成功清空！所有旧编号已失效。")
+    else:
+        await update.message.reply_text("❌ 清空失败，请检查 Redis 连接。")
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("您好，欢迎来到微担保服务中心 😊", reply_markup=main_reply_markup)
 
@@ -93,7 +124,8 @@ def main():
         },
         fallbacks=[CommandHandler("start", start)],
     )
-
+    app.add_handler(CommandHandler("total", show_total))
+    app.add_handler(CommandHandler("clear_all", clear_database))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("add", add_group))
     app.add_handler(verify_handler)
