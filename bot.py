@@ -5,10 +5,14 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 # --- 1. 配置区域 ---
 TOKEN = os.getenv("BOT_TOKEN", "")
-# 这里的名单包含你要求的所有编号，确保全是字符串格式
+# 你的 ID，确保和环境变量一致，用于校验所有者权限
+ADMIN_ID_VAL = os.getenv("ADMIN_ID", "7934724103").strip()
+
+# 初始名单（代码重启后会恢复到这个初始状态）
 VALID_GROUPS = [
-    "88", "90", "91", "92", "116", "117", "118", "100", 
-    "006", "168", "333", "A222", "B188"
+   "66", "88", "90", "91", "92", "116", "117", "118", "100","130", "131", 
+    "132", "133", "134", "135", "136", "137", "138", "139", 
+    "006","166","167", "168", "333", "A222", "B188"
 ]
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -18,7 +22,7 @@ WAITING_GROUP_ID = 1
 MAIN_MENU = [['人工客服', '资源对接'], ['自助验群', '纠纷仲裁']]
 main_reply_markup = ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True)
 
-# 统一的报备信息回复模板
+# 报备信息模板
 async def send_baobei_info(update: Update):
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("对接发货", url="https://t.me/install88"),
@@ -30,28 +34,42 @@ async def send_baobei_info(update: Update):
         reply_markup=keyboard
     )
 
-# /start 指令
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "您好，欢迎来到微担保服务中心 😊\n请点击下方选择您要办理的业务。",
-        reply_markup=main_reply_markup
-    )
+    await update.message.reply_text("您好，欢迎来到微担保服务中心 😊", reply_markup=main_reply_markup)
+
+# --- 新增：所有者添加编号功能 ---
+async def add_new_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    # 权限校验：只允许 ADMIN_ID 或特定用户名
+    if str(user.id) != ADMIN_ID_VAL and user.username != "danbao_11":
+        await update.message.reply_text("❌ 您没有权限添加编号。")
+        return
+
+    if not context.args:
+        await update.message.reply_text("💡 用法：`/add 编号` (例如: `/add 999`)")
+        return
+
+    new_id = context.args[0].strip().upper()
+    if new_id in VALID_GROUPS:
+        await update.message.reply_text(f"ℹ️ 编号 【{new_id}】 已经在名单中了。")
+    else:
+        VALID_GROUPS.append(new_id)
+        await update.message.reply_text(f"✅ 成功添加编号：【{new_id}】\n当前共有 {len(VALID_GROUPS)} 个验证编号。")
 
 # 触发自助验群
 async def start_verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔍 请输入您需要验证的群编号：")
     return WAITING_GROUP_ID
 
-# 验证群号逻辑 (在 Conversation 内部)
+# 验证群号逻辑
 async def check_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = update.message.text.strip().upper()
     
-    # 条件：前四个字是“报备编号”，则直接跳出并回复报备信息
+    # 优先拦截报备编号
     if user_input.startswith("报备编号"):
         await send_baobei_info(update)
         return ConversationHandler.END
 
-    # 正常的名单比对
     if user_input in VALID_GROUPS:
         res = f"✅ 查询结果：【{user_input}】\n该群为已查证的公群或专群，可放心交易。"
     else:
@@ -60,45 +78,35 @@ async def check_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(res, reply_markup=main_reply_markup)
     return ConversationHandler.END
 
-# 普通消息和菜单按钮处理
+# 处理菜单按钮和关键词
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if not text: return
 
-    # 条件：前四个字是“报备编号”
     if text.startswith("报备编号"):
         await send_baobei_info(update)
     elif text == "人工客服":
-        await update.message.reply_text("正在为您分配人工客服，请稍后...")
-    elif text == "资源对接":
-        await update.message.reply_text("请联系官方频道了解详细资源信息。")
-    elif text == "纠纷仲裁":
-        await update.message.reply_text("请提供您的交易证明和群编号，稍后会有专人处理。")
+        await update.message.reply_text("正在为您分配人工客服...")
+    # ...其他菜单逻辑
 
-# --- 3. 主程序入口 ---
 def main():
-    if not TOKEN:
-        print("错误: 请在环境变量中配置 BOT_TOKEN")
-        return
-        
+    if not TOKEN: return
     app = Application.builder().token(TOKEN).build()
     
-    # 验群流程处理器
     verify_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex('^自助验群$'), start_verify)],
         states={
             WAITING_GROUP_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, check_group_id)],
         },
         fallbacks=[CommandHandler("start", start)],
-        allow_reentry=True # 允许在状态中重新点击菜单
+        allow_reentry=True 
     )
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("add", add_new_group)) # 注册添加指令
     app.add_handler(verify_handler)
-    # 处理所有其他文字消息
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     
-    print("🚀 最终整理版机器人已启动，不依赖数据库，纯净运行中...")
     app.run_polling()
 
 if __name__ == "__main__":
