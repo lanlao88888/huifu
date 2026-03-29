@@ -33,7 +33,7 @@ async def send_baobei_info(update: Update):
 # /start 指令
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "您好，欢迎来到微担保服务中心 😊\n请点击下方对应的业务板块选择您要办理的业务。",
+        "您好，欢迎来到微担保服务中心 😊\n请点击下方选择您要办理的业务。",
         reply_markup=main_reply_markup
     )
 
