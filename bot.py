@@ -4,144 +4,98 @@ import os
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 
-# --- 1. 配置与数据库连接 ---
+# --- 1. 严格配置处理 ---
 TOKEN = os.getenv("BOT_TOKEN", "")
-ADMIN_ID_STR = os.getenv("ADMIN_ID", "0")
-
-try:
-    ADMIN_ID = int(ADMIN_ID_STR.strip())
-except:
-    ADMIN_ID = 0
-
-REDIS_URL = os.getenv("REDIS_URL")
+ADMIN_ID_VAL = os.getenv("ADMIN_ID", "7934724103").strip()
+REDIS_URL = os.getenv("REDIS_URL", "")
 
 # 启用日志
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# 初始化 Redis 变量
-r = None 
-if REDIS_URL:
+# --- 2. 数据库连接 (使用全局变量并增加重连机制) ---
+def get_redis_connection():
     try:
-        # 确保 decode_responses=True 这样拿到的才是字符串
-        r = redis.from_url(REDIS_URL, decode_responses=True)
-        logging.info("成功连接到 Redis 数据库")
+        connection = redis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=10)
+        connection.ping()
+        return connection
     except Exception as e:
-        logging.error(f"Redis 连接失败: {e}")
-else:
-    logging.error("错误: 未在环境变量中找到 REDIS_URL")
+        logging.error(f"Redis连接失败: {e}")
+        return None
 
-# --- 2. 数据库操作函数 ---
+# 初始化连接
+r = get_redis_connection()
 
+# --- 3. 增强版数据库函数 ---
 def save_group_to_db(group_id):
+    global r
+    if not r: r = get_redis_connection() # 自动重连
     if r:
-        # 强制转为字符串并去除两端空格
-        clean_id = str(group_id).strip()
-        return r.sadd("valid_groups_set", clean_id)
+        return r.sadd("valid_groups_set", str(group_id).strip())
     return False
 
 def is_group_valid(group_id):
+    global r
+    if not r: r = get_redis_connection() # 自动重连
     if r:
-        clean_id = str(group_id).strip()
-        return r.sismember("valid_groups_set", clean_id)
+        return r.sismember("valid_groups_set", str(group_id).strip())
     return False
 
-# --- 3. 菜单与状态定义 ---
+# --- 4. 业务逻辑 ---
 WAITING_GROUP_ID = 1
 MAIN_MENU = [['人工客服', '资源对接'], ['自助验群', '纠纷仲裁']]
 main_reply_markup = ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True)
 
-# --- 4. 业务处理逻辑 ---
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "您好，欢迎来到微担保服务中心，请点击下方对应的业务板块选择您要办理的业务😊",
-        reply_markup=main_reply_markup
-    )
+    await update.message.reply_text("您好，欢迎来到微担保服务中心 😊", reply_markup=main_reply_markup)
 
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    user_id = user.id
-    username = user.username 
+    # 权限判断：同时对比 ID 和 用户名
+    is_admin = (str(user.id) == ADMIN_ID_VAL) or (user.username == "danbao_11")
     
-    print(f"DEBUG: 尝试操作 - ID: {user_id}, 用户名: {username}, 设定管理员ID: {ADMIN_ID}")
-
-    is_admin = (user_id == ADMIN_ID) or (username == "danbao_11")
-
     if not is_admin:
-        await update.message.reply_text(f"❌ 您没有权限。您的ID是: {user_id}, 用户名是: @{username}")
+        await update.message.reply_text(f"❌ 无权限。您的ID: {user.id}")
         return
 
     if not context.args:
-        await update.message.reply_text("💡 用法：`/add 编号` (例如: /add A112)")
+        await update.message.reply_text("💡 用法：`/add 编号`")
         return
 
     new_id = context.args[0].strip()
     if save_group_to_db(new_id):
-        await update.message.reply_text(f"✅ 认证成功！管理员 @{username}\n已成功收录编号：{new_id}")
+        await update.message.reply_text(f"✅ 成功收录编号：{new_id}")
     else:
-        await update.message.reply_text(f"ℹ️ 编号 {new_id} 已经存在于数据库中。")
+        await update.message.reply_text(f"ℹ️ 编号 {new_id} 已在库中。")
 
 async def start_verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("请输入您需要验证的群编号，如：123、A112。")
+    await update.message.reply_text("请输入需要验证的群编号：")
     return WAITING_GROUP_ID
 
 async def check_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = update.message.text.strip()
-    
-    print(f"DEBUG: 用户正在查询编号: '{user_input}'")
-
     if is_group_valid(user_input):
-        res = f"✅ 查询结果：【{user_input}】\n该群为已查证的公群或专群，可放心交易。"
+        res = f"✅ 查询结果：【{user_input}】\n该群为已查证公群，请放心交易。"
     else:
-        res = f"❌ 查询结果：【{user_input}】\n未查证到该编号！注意⚠️是假群，请勿交易。"
-
+        res = f"❌ 查询结果：【{user_input}】\n未查证到该编号！注意假群。"
+    
     await update.message.reply_text(res, reply_markup=main_reply_markup)
     return ConversationHandler.END
 
-async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    if not text: return
-
-    if text.startswith("报备编号"):
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("对接发货", url="https://t.me/install88"),
-             InlineKeyboardButton("做单流程", url="https://t.me/c/2895181398/743")],
-            [InlineKeyboardButton("微担保公群", url="https://t.me/weigq")]
-        ])
-        await update.message.reply_text(
-            "手机拍照业务公群\n\n公群上压89999u\n\n1.进群必看操作流程\n2.公群禁言也可以正常结账",
-            reply_markup=keyboard
-        )
-        return
-
-    responses = {
-        "人工客服": "正在分配人工客服，请耐心等待...",
-        "资源对接": "请详细说明您需要对接的板块...",
-        "纠纷仲裁": "请先描述您纠纷的内容及群号..."
-    }
-    if text in responses:
-        await update.message.reply_text(responses[text])
-
+# --- 5. 主函数 ---
 def main():
-    if not TOKEN:
-        print("错误: 未检测到 BOT_TOKEN")
-        return
+    if not TOKEN: return
     app = Application.builder().token(TOKEN).build()
     
     verify_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex('^自助验群$'), start_verify)],
-        states={
-            WAITING_GROUP_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, check_group_id)],
-        },
+        states={WAITING_GROUP_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, check_group_id)]},
         fallbacks=[CommandHandler("start", start)],
     )
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("add", add_group))
     app.add_handler(verify_handler)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_all_messages))
-
-    print("机器人已启动...")
+    
     app.run_polling()
 
 if __name__ == "__main__":
