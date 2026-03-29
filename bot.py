@@ -56,24 +56,31 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    # 在日志中输出，方便排查
-    print(f"DEBUG: 用户 {user_id} 尝试添加，系统设定的管理员是 {ADMIN_ID}")
+    user = update.effective_user
+    user_id = user.id
+    username = user.username # 获取用户名，例如 danbao_11
+    
+    # 打印调试信息到 Railway Logs
+    print(f"DEBUG: 尝试操作 - ID: {user_id}, 用户名: {username}, 设定管理员ID: {ADMIN_ID}")
 
-    if user_id != ADMIN_ID:
-        # 增加反馈信息，如果你看到 ID 还是不一致，就说明环境变量没生效
-        await update.message.reply_text(f"❌ 您没有权限。您的ID是: {user_id}")
+    # --- 双重检查逻辑 ---
+    # 只要 [ID 匹配] 或者 [用户名匹配]，就给权限
+    is_admin = (user_id == ADMIN_ID) or (username == "danbao_11")
+
+    if not is_admin:
+        await update.message.reply_text(f"❌ 您没有权限。您的ID是: {user_id}, 用户名是: @{username}")
         return
 
+    # 权限通过，执行添加逻辑
     if not context.args:
-        await update.message.reply_text("💡 用法：`/add 编号`")
+        await update.message.reply_text("💡 用法：`/add 编号` (例如: /add A112)")
         return
 
     new_id = context.args[0].strip()
     if save_group_to_db(new_id):
-        await update.message.reply_text(f"✅ 已成功收录编号：{new_id}")
+        await update.message.reply_text(f"✅ 认证成功！管理员 @{username}\n已成功收录编号：{new_id}")
     else:
-        await update.message.reply_text(f"ℹ️ 编号 {new_id} 已经存在。")
+        await update.message.reply_text(f"ℹ️ 编号 {new_id} 已经存在于数据库中。")
 
 async def start_verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("请输入您需要验证的群编号，如：123、A112。")
