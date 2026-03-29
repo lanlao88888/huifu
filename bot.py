@@ -5,11 +5,21 @@ from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKe
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 
 # --- 1. 配置与数据库连接 ---
-TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+# 直接从系统环境获取，并增加默认值防止报错
+TOKEN = os.getenv("BOT_TOKEN", "")
+ADMIN_ID_STR = os.getenv("ADMIN_ID", "0")
+# 这里的处理是为了确保万一环境变量读取有空格也能转成数字
+try:
+    ADMIN_ID = int(ADMIN_ID_STR.strip())
+except:
+    ADMIN_ID = 0
+
 REDIS_URL = os.getenv("REDIS_URL")
 
-# 【关键点】必须先在这里定义 r，下面的函数才能找到它
+# 启用日志
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+
+# 初始化 Redis 变量
 r = None 
 if REDIS_URL:
     try:
@@ -41,21 +51,22 @@ main_reply_markup = ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "您好，欢迎来到微担保服务中心，请点击下方对应的业务板块选择您要办理的业务😊",
+        "您好，欢迎来到微担保服务中心，请点击下方对应的业务板块选择您要办理 of 业务😊",
         reply_markup=main_reply_markup
     )
 
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    # 打印到日志里，方便我们排查
-    print(f"DEBUG: 尝试操作的用户ID是 {user_id}, 变量里的ADMIN_ID是 {ADMIN_ID}")
+    # 在日志中输出，方便排查
+    print(f"DEBUG: 用户 {user_id} 尝试添加，系统设定的管理员是 {ADMIN_ID}")
 
     if user_id != ADMIN_ID:
-        await update.message.reply_text(f"❌ 您没有权限执行此操作。 (您的ID: {user_id})")
+        # 增加反馈信息，如果你看到 ID 还是不一致，就说明环境变量没生效
+        await update.message.reply_text(f"❌ 您没有权限。您的ID是: {user_id}")
         return
 
     if not context.args:
-        await update.message.reply_text("💡 用法：`/add 编号`", parse_mode="Markdown")
+        await update.message.reply_text("💡 用法：`/add 编号`")
         return
 
     new_id = context.args[0].strip()
@@ -70,20 +81,17 @@ async def start_verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def check_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = update.message.text.strip()
-    
-    # 直接查询 Redis，不再依赖本地变量 VALID_GROUPS
     if is_group_valid(user_input):
         res = f"✅ 查询结果：【{user_input}】\n该群为已查证的公群或专群，可放心交易。"
     else:
         res = f"❌ 查询结果：【{user_input}】\n未查证到该编号！注意⚠是假群，请勿交易。"
-
     await update.message.reply_text(res, reply_markup=main_reply_markup)
     return ConversationHandler.END
 
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
+    if not text: return
 
-    # 关键词监控
     if text.startswith("报备编号"):
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("对接发货", url="https://t.me/install88"),
@@ -96,7 +104,6 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return
 
-    # 业务菜单回复
     responses = {
         "人工客服": "正在分配人工客服，请耐心等待...",
         "资源对接": "请详细说明您需要对接的板块...",
@@ -105,14 +112,12 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
     if text in responses:
         await update.message.reply_text(responses[text])
 
-# --- 5. 启动入口 ---
 def main():
     if not TOKEN:
-        print("错误: 未检测到 BOT_TOKEN 环境变量")
+        print("错误: 未检测到 BOT_TOKEN")
         return
-
     app = Application.builder().token(TOKEN).build()
-
+    
     verify_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex('^自助验群$'), start_verify)],
         states={
@@ -126,7 +131,7 @@ def main():
     app.add_handler(verify_handler)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_all_messages))
 
-    print("机器人已启动（Redis持久化模式）...")
+    print("机器人已启动...")
     app.run_polling()
 
 if __name__ == "__main__":
