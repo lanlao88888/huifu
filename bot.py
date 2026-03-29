@@ -46,10 +46,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """管理员添加群号命令: /add 编号"""
-    print(f"当前用户 ID: {update.effective_user.id}, 授权管理员 ID: {ADMIN_ID}")
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("❌ 您没有权限执行此操作。")
+    user_id = update.effective_user.id
+    # 打印到日志里，方便我们排查
+    print(f"DEBUG: 尝试操作的用户ID是 {user_id}, 变量里的ADMIN_ID是 {ADMIN_ID}")
+
+    if user_id != ADMIN_ID:
+        await update.message.reply_text(f"❌ 您没有权限执行此操作。 (您的ID: {user_id})")
         return
 
     if not context.args:
